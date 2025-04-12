@@ -1,75 +1,55 @@
-import React, { useState, useEffect } from "react";
-import "../components/common.css";
+import React, { useState, useEffect } from 'react';
+import './common.css';
 
-// サンプル: APIから給与データを取得し、計算結果（控除、手取額など）を画面表示する
 const Kyuyo: React.FC = () => {
-  const [salaryData, setSalaryData] = useState<any[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7).replace("-", ""));
+  const [month, setMonth] = useState('202504');
+  const [salaryInfo, setSalaryInfo] = useState<any>(null);
+  const [error, setError] = useState('');
 
-  // 給与データ取得処理（例として固定データのフェッチ。実際はAPIから取得）
   useEffect(() => {
     const fetchSalary = async () => {
-      // API呼び出し例（GET /salary?month=xxxxxx などを実装）
-      // ここではダミーデータを利用
-      const data = [
-        {
-          srlykh: 250000,
-          srlyzg: 15000,
-          srlyke: 12500,
-          srlyka: 4500,
-          srlyko: 22875,
-          srlyky: 1250,
-          srlysy: 8500,
-          srlysz: 25000,
+      try {
+        // サンプルでは社員番号10001の情報を取得。実際は認証情報等より取得する
+        const response = await fetch(`/salary/10001?month=${month}`);
+        const data = await response.json();
+        if (response.ok) {
+          setSalaryInfo(data);
+        } else {
+          setError(data.error);
         }
-      ];
-      setSalaryData(data);
+      } catch (err) {
+        setError('給与情報の取得に失敗しました');
+      }
     };
     fetchSalary();
-  }, [selectedMonth]);
-
-  // 給与明細から控除合計、手取額計算（ロジック例）
-  const calculateTotals = (data: any) => {
-    const totalDeductions =
-      data.srlyke + data.srlyka + data.srlyko + data.srlyky + data.srlysy + data.srlysz;
-    const takeHome = data.srlykh + data.srlyzg - totalDeductions;
-    return { totalDeductions, takeHome };
-  };
+  }, [month]);
 
   return (
-    <div className="container">
-      <h2>給与明細</h2>
+    <div className="kyuyo-container">
+      <h2>給与画面</h2>
       <div>
-        <label>対象月:</label>
+        <label>年月 (YYYYMM):</label>
         <input
-          type="month"
-          value={`${selectedMonth.substring(0, 4)}-${selectedMonth.substring(4, 6)}`}
-          onChange={(e) => setSelectedMonth(e.target.value.replace("-", ""))}
+          type="text"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
         />
       </div>
-      <table border={1} cellPadding={5} style={{ marginTop: "20px" }}>
-        <thead>
-          <tr>
-            <th>基本給</th>
-            <th>残業手当</th>
-            <th>控除合計</th>
-            <th>手取額</th>
-          </tr>
-        </thead>
-        <tbody>
-          {salaryData.map((data, index) => {
-            const { totalDeductions, takeHome } = calculateTotals(data);
-            return (
-              <tr key={index}>
-                <td>{data.srlykh}</td>
-                <td>{data.srlyzg}</td>
-                <td>{totalDeductions}</td>
-                <td>{takeHome}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {error && <p className="error">{error}</p>}
+      {salaryInfo && (
+        <div className="salary-details">
+          <p>基本給: {salaryInfo.salary.basic_salary}</p>
+          <p>残業手当: {salaryInfo.salary.overtime_allowance}</p>
+          <p>健康保険料: {salaryInfo.salary.health_insurance}</p>
+          <p>介護保険料: {salaryInfo.salary.nursing_care_insurance}</p>
+          <p>厚生年金: {salaryInfo.salary.pension}</p>
+          <p>雇用保険料: {salaryInfo.salary.employment_insurance}</p>
+          <p>所得税: {salaryInfo.salary.income_tax}</p>
+          <p>住民税: {salaryInfo.salary.resident_tax}</p>
+          <p>合計控除: {salaryInfo.total_deductions}</p>
+          <p>手取り額: {salaryInfo.take_home}</p>
+        </div>
+      )}
     </div>
   );
 };
