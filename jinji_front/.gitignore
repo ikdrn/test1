@@ -1,0 +1,11 @@
+# Node.js の依存モジュール
+node_modules/
+
+# ビルド成果物
+build/
+
+# 環境変数ファイル
+.env
+
+# macOS用のキャッシュファイル
+.DS_Store

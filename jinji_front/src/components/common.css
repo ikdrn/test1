@@ -1,0 +1,56 @@
+/* 基本のリセット */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* body全体のスタイル */
+body {
+  font-family: Arial, sans-serif;
+  font-size: 18px;  /* 文字を大きくする */
+  line-height: 1.6;
+  background-color: #f9f9f9;
+  min-height: 100vh;   /* 全画面をカバー */
+}
+
+/* containerクラスは、全体に適用される余白や幅を指定 */
+.container {
+  width: 100%;
+  max-width: 1200px;   /* 必要に応じて調整 */
+  margin: 0 auto;
+  padding: 40px;
+}
+
+/* ログインフォームの中央揃え */
+.login-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;   /* 画面全体を覆う */
+  background: #fff;
+}
+
+/* ボタンなどの要素のスタイル */
+button {
+  font-size: 18px;
+  padding: 10px 20px;
+}
+
+/* 入力フィールドのスタイル */
+input[type="text"],
+input[type="password"],
+input[type="number"] {
+  font-size: 18px;
+  padding: 10px;
+  width: 100%;
+  margin-top: 8px;
+  margin-bottom: 16px;
+}
+
+/* 各コンポーネント固有のスタイルを調整するためのサンプル */
+h2 {
+  font-size: 2rem;
+  margin-bottom: 20px;
+}
