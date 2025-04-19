@@ -1,11 +1,36 @@
+version: '3'
+
 services:
-  jinji_back:
-    build: ./jinji_back
+  # バックエンド
+  backend:
+    build:
+      context: ./jinji_back
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     environment:
       - NEON_CONNECT=${NEON_CONNECT}
-  jinji_front:
-    build: ./jinji_front
+    restart: always
+    networks:
+      - jinji-network
+
+  # フロントエンド
+  frontend:
+    build:
+      context: ./jinji_front
+      dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=http://backend:8080/api
+    volumes:
+      - ./jinji_front:/app
+      - /app/node_modules
+    networks:
+      - jinji-network
+
+networks:
+  jinji-network:
+    driver: bridge

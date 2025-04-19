@@ -1,20 +1,22 @@
 # ベースイメージ
 FROM golang:1.20-alpine
 
-# 作業ディレクトリ作成
+# 作業ディレクトリ
 WORKDIR /app
 
-# モジュールファイルとソースコードをコピー
-COPY go.mod go.sum ./
+# 依存関係インストール前にプロキシ設定など必要な環境変数を設定
+ENV GO111MODULE=on
+
+# 依存関係のコピーとダウンロード
+COPY go.mod .
 RUN go mod download
 
+# ソースコードのコピー
 COPY . .
 
-# バイナリビルド
-RUN go build -o jinji_app .
+# アプリケーションのビルド
+RUN go build -o jinji-app
 
-# ポート公開（環境に合わせ変更）
+# アプリケーションの実行
 EXPOSE 8080
-
-# アプリ実行
-CMD ["./jinji_app"]
+CMD ["./jinji-app"]

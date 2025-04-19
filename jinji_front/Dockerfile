@@ -1,18 +1,16 @@
 # Node.js ベースの Dockerfile
-FROM node:18-alpine
+FROM node:16-alpine
 
+# 作業ディレクトリ
 WORKDIR /app
 
-# npm を使用している場合は package-lock.json もコピーする
-COPY package.json package-lock.json ./
+# 依存関係のコピーとインストール
+COPY package.json package-lock.json* ./
 RUN npm install
 
+# ソースコードのコピー
 COPY . .
 
-# ビルド（必要に応じ）
-RUN npm run build
-
-# ポート3000を公開
+# 開発モードでアプリを起動
 EXPOSE 3000
-
 CMD ["npm", "start"]
