@@ -59,15 +59,11 @@ const Login: React.FC = () => {
   
   return (
     <div className="container">
-      <div style={{ 
+      <div className="content-card" style={{ 
         maxWidth: '400px', 
-        margin: '50px auto', 
-        padding: '20px',
-        backgroundColor: 'white',
-        borderRadius: '8px',
-        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)'
+        margin: '50px auto'
       }}>
-        <h1 style={{ textAlign: 'center', color: '#2c3e50' }}>人事システム</h1>
+        <h1 style={{ textAlign: 'center', color: '#2c3e50', marginTop: 0 }}>人事システム</h1>
         <form onSubmit={handleSubmit}>
           {error && (
             <div className="alert alert-error">
@@ -103,7 +99,12 @@ const Login: React.FC = () => {
             disabled={isLoading}
             style={{ width: '100%', marginTop: '20px' }}
           >
-            {isLoading ? 'ログイン中...' : 'ログイン'}
+            {isLoading ? (
+              <>
+                <span className="loading-spinner" style={{ marginRight: '8px' }}></span>
+                ログイン中...
+              </>
+            ) : 'ログイン'}
           </button>
         </form>
         
@@ -111,11 +112,15 @@ const Login: React.FC = () => {
           marginTop: '20px', 
           fontSize: '14px', 
           textAlign: 'center', 
-          color: '#666' 
+          color: '#666',
+          padding: '10px',
+          border: '1px solid #eee',
+          borderRadius: '4px',
+          backgroundColor: '#f9f9f9'
         }}>
-          <p>テスト用アカウント:</p>
-          <p>一般社員: 10001 / abc1234</p>
-          <p>上司: 20001 / ghi1234</p>
+          <p style={{ margin: '5px 0' }}>テスト用アカウント:</p>
+          <p style={{ margin: '5px 0' }}>一般社員: 10001 / abc1234</p>
+          <p style={{ margin: '5px 0' }}>上司: 20001 / ghi1234</p>
         </div>
       </div>
     </div>

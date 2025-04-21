@@ -82,6 +82,74 @@ var leaveTypeMap = map[int]string{
 // グローバル変数
 var db *sql.DB
 
+// データベース接続確認用ミドルウェア
+func checkDBConnection() gin.HandlerFunc {
+  return func(c *gin.Context) {
+    // DB接続状態を確認
+    err := db.Ping()
+    if err != nil {
+      log.Printf("データベース接続エラー: %v", err)
+      c.JSON(http.StatusServiceUnavailable, gin.H{"error": "データベースサーバーへの接続に失敗しました。しばらく経ってから再度お試しください。"})
+      c.Abort()
+      return
+    }
+    c.Next()
+  }
+}
+
+// 汎用データベースエラーハンドラ
+func handleDatabaseError(c *gin.Context, err error, message string) {
+  if err == sql.ErrNoRows {
+    c.JSON(http.StatusNotFound, gin.H{"error": "データが見つかりません"})
+  } else {
+    log.Printf("データベースエラー [%s]: %v", message, err)
+    c.JSON(http.StatusInternalServerError, gin.H{"error": message})
+  }
+}
+
+// トランザクション実行用ヘルパー関数
+func executeWithTransaction(c *gin.Context, callback func(*sql.Tx) error, successMessage string) {
+  // トランザクション開始
+  tx, err := db.Begin()
+  if err != nil {
+    log.Printf("トランザクション開始エラー: %v", err)
+    c.JSON(http.StatusInternalServerError, gin.H{"error": "データベーストランザクションの開始に失敗しました"})
+    return
+  }
+  
+  // 関数終了時に実行されるdefer処理
+  defer func() {
+    // パニックが発生した場合はトランザクションをロールバック
+    if r := recover(); r != nil {
+      tx.Rollback()
+      log.Printf("トランザクション実行中のパニック: %v", r)
+      c.JSON(http.StatusInternalServerError, gin.H{"error": "予期せぬエラーが発生しました"})
+    }
+  }()
+  
+  // コールバック関数を実行
+  if err := callback(tx); err != nil {
+    tx.Rollback() // エラー発生時はロールバック
+    if err == sql.ErrNoRows {
+      c.JSON(http.StatusNotFound, gin.H{"error": "操作対象のデータが見つかりません"})
+    } else {
+      log.Printf("トランザクション実行エラー: %v", err)
+      c.JSON(http.StatusInternalServerError, gin.H{"error": "データベース操作中にエラーが発生しました"})
+    }
+    return
+  }
+  
+  // トランザクションコミット
+  if err := tx.Commit(); err != nil {
+    log.Printf("トランザクションコミットエラー: %v", err)
+    c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースへの変更の確定に失敗しました"})
+    return
+  }
+  
+  // 成功レスポンス
+  c.JSON(http.StatusOK, gin.H{"message": successMessage})
+}
+
 func main() {
   // データベース接続
   var err error
@@ -90,22 +158,43 @@ func main() {
     log.Fatal("環境変数 NEON_CONNECT が設定されていません")
   }
 
-  db, err = sql.Open("postgres", dbConnStr)
-  if err != nil {
-    log.Fatalf("データベース接続エラー: %s", err)
+  // 接続リトライロジック
+  maxRetries := 5
+  retryInterval := time.Second * 3
+  
+  for i := 0; i < maxRetries; i++ {
+    log.Printf("データベース接続試行 (%d/%d)", i+1, maxRetries)
+    db, err = sql.Open("postgres", dbConnStr)
+    if err == nil {
+      // 接続テスト
+      err = db.Ping()
+      if err == nil {
+        log.Println("データベース接続成功")
+        break
+      }
+    }
+    
+    if i < maxRetries-1 {
+      log.Printf("データベース接続エラー: %s - %d秒後に再試行します", err, retryInterval/time.Second)
+      time.Sleep(retryInterval)
+    } else {
+      log.Fatalf("データベース接続失敗: %s", err)
+    }
   }
+  
+  // コネクションプール設定
+  db.SetMaxOpenConns(25)  // 最大接続数
+  db.SetMaxIdleConns(5)   // アイドル状態の最大接続数
+  db.SetConnMaxLifetime(5 * time.Minute) // 接続の最大生存期間
+  
   defer db.Close()
-
-  // 接続テスト
-  err = db.Ping()
-  if err != nil {
-    log.Fatalf("データベースPingエラー: %s", err)
-  }
-  fmt.Println("データベース接続成功")
 
   // Ginルーター設定
   router := gin.Default()
-
+  
+  // エラーハンドリングの改善
+  router.Use(gin.Recovery())
+  
   // CORS設定
   config := cors.DefaultConfig()
   config.AllowOrigins = []string{"http://localhost:3000"}
@@ -120,6 +209,7 @@ func main() {
   // 認証が必要なエンドポイント
   authorized := router.Group("/api")
   authorized.Use(authMiddleware())
+  authorized.Use(checkDBConnection()) // DB接続チェックを追加
   {
     // 社員情報
     authorized.GET("/employee/:id", getEmployee)
@@ -173,7 +263,7 @@ func authMiddleware() gin.HandlerFunc {
   }
 }
 
-  // ログイン処理
+// ログイン処理
 func handleLogin(c *gin.Context) {
   var req LoginRequest
   if err := c.ShouldBindJSON(&req); err != nil {
@@ -188,7 +278,7 @@ func handleLogin(c *gin.Context) {
     if err == sql.ErrNoRows {
       c.JSON(http.StatusUnauthorized, gin.H{"error": "ユーザーが見つかりません"})
     } else {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
+      handleDatabaseError(c, err, "ログイン処理中にデータベースエラーが発生しました")
     }
     return
   }
@@ -233,11 +323,7 @@ func getEmployee(c *gin.Context) {
     Scan(&employee.ID, &employee.Name)
   
   if err != nil {
-    if err == sql.ErrNoRows {
-      c.JSON(http.StatusNotFound, gin.H{"error": "社員が見つかりません"})
-    } else {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
-    }
+    handleDatabaseError(c, err, "社員情報の取得に失敗しました")
     return
   }
 
@@ -267,7 +353,7 @@ func getAttendance(c *gin.Context) {
   `, id, yearMonth)
   
   if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
+    handleDatabaseError(c, err, "勤怠データの取得に失敗しました")
     return
   }
   defer rows.Close()
@@ -301,7 +387,7 @@ func getAttendance(c *gin.Context) {
   `, id, yearMonth)
   
   if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "休暇データ取得エラー"})
+    handleDatabaseError(c, err, "休暇データの取得に失敗しました")
     return
   }
   defer leaveRows.Close()
@@ -346,7 +432,7 @@ func getAttendanceByDate(c *gin.Context) {
   `, id, date).Scan(&attendance.EmployeeID, &attendance.Date, &startTime, &endTime)
   
   if err != nil && err != sql.ErrNoRows {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
+    handleDatabaseError(c, err, "勤怠データの取得に失敗しました")
     return
   }
 
@@ -372,7 +458,7 @@ func getAttendanceByDate(c *gin.Context) {
   `, id, date).Scan(&leaveType)
   
   if err != nil && err != sql.ErrNoRows {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "休暇データ取得エラー"})
+    handleDatabaseError(c, err, "休暇データの取得に失敗しました")
     return
   }
 
@@ -417,66 +503,62 @@ func createUpdateAttendance(c *gin.Context) {
   }
   firstFridayNextMonth := firstDayNextMonth.AddDate(0, 0, daysUntilFriday)
   
-  // 締め日チェック
-  if date.Before(lastDayOfMonth.AddDate(0, -1, 0)) || date.After(firstFridayNextMonth) {
+  // 締め日チェック（現在の日付が翌月の第一金曜日を過ぎていないかチェック）
+  if date.Before(lastDayOfMonth.AddDate(0, -1, 0)) || time.Now().After(firstFridayNextMonth) {
     c.JSON(http.StatusBadRequest, gin.H{"error": "入力期間外の勤怠は更新できません"})
     return
   }
 
-  // トランザクション開始
-  tx, err := db.Begin()
-  if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "トランザクションエラー"})
-    return
-  }
-  defer tx.Rollback()
+  // トランザクションによる処理実行
+  executeWithTransaction(c, func(tx *sql.Tx) error {
+    if att.LeaveType > 0 {
+      // 休暇情報を登録
+      _, err := tx.Exec(`
+        INSERT INTO TBL_LEAVE (lereid, leredt, leretp)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (lereid, leredt) DO UPDATE
+        SET leretp = $3
+      `, att.EmployeeID, att.Date, att.LeaveType)
 
-  if att.LeaveType > 0 {
-    // 休暇情報を登録
-    _, err = tx.Exec(`
-      INSERT INTO TBL_LEAVE (lereid, leredt, leretp)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (lereid, leredt) DO UPDATE
-      SET leretp = $3
-    `, att.EmployeeID, att.Date, att.LeaveType)
+      if err != nil {
+        return err
+      }
 
-    if err != nil {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "休暇データ登録エラー"})
-      return
+      // 関連する勤怠データを削除（休暇と出勤は排他的）
+      _, err = tx.Exec(`
+        DELETE FROM TBL_ATTEN
+        WHERE atteid = $1 AND attedt = $2
+      `, att.EmployeeID, att.Date)
+
+      if err != nil {
+        return err
+      }
+    } else {
+      // 休暇情報があれば削除
+      _, err := tx.Exec(`
+        DELETE FROM TBL_LEAVE
+        WHERE lereid = $1 AND leredt = $2
+      `, att.EmployeeID, att.Date)
+
+      if err != nil {
+        return err
+      }
+
+      // 勤怠情報を登録・更新
+      _, err = tx.Exec(`
+        INSERT INTO TBL_ATTEN (atteid, attedt, attest, atteet)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (atteid, attedt) DO UPDATE
+        SET attest = $3, atteet = $4
+      `, att.EmployeeID, att.Date, att.StartTime, att.EndTime)
+
+      if err != nil {
+        return err
+      }
     }
-  } else {
-    // 休暇情報があれば削除
-    _, err = tx.Exec(`
-      DELETE FROM TBL_LEAVE
-      WHERE lereid = $1 AND leredt = $2
-    `, att.EmployeeID, att.Date)
-
-    if err != nil {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "休暇データ削除エラー"})
-      return
-    }
-
-    // 勤怠情報を登録・更新
-    _, err = tx.Exec(`
-      INSERT INTO TBL_ATTEN (atteid, attedt, attest, atteet)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (atteid, attedt) DO UPDATE
-      SET attest = $3, atteet = $4
-    `, att.EmployeeID, att.Date, att.StartTime, att.EndTime)
-
-    if err != nil {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "勤怠データ登録エラー"})
-      return
-    }
-  }
-
-  // トランザクションコミット
-  if err = tx.Commit(); err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "コミットエラー"})
-    return
-  }
-
-  c.JSON(http.StatusOK, gin.H{"message": "勤怠情報を更新しました"})
+    
+    return nil
+  }, "勤怠情報を更新しました")
 }
 
 // 休暇情報取得
@@ -499,7 +581,7 @@ func getLeaves(c *gin.Context) {
   `, id, yearMonth)
   
   if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
+    handleDatabaseError(c, err, "休暇データの取得に失敗しました")
     return
   }
   defer rows.Close()
@@ -542,7 +624,7 @@ func createLeave(c *gin.Context) {
   `, leave.EmployeeID, leave.Date, leave.LeaveType)
 
   if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "休暇データ登録エラー"})
+    handleDatabaseError(c, err, "休暇データの登録に失敗しました")
     return
   }
 
@@ -553,7 +635,7 @@ func createLeave(c *gin.Context) {
   `, leave.EmployeeID, leave.Date)
 
   if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "関連勤怠データ削除エラー"})
+    handleDatabaseError(c, err, "関連勤怠データの削除に失敗しました")
     return
   }
 
@@ -581,7 +663,7 @@ func deleteLeave(c *gin.Context) {
   `, id, date)
 
   if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "休暇データ削除エラー"})
+    handleDatabaseError(c, err, "休暇データの削除に失敗しました")
     return
   }
 
@@ -625,11 +707,7 @@ func getSalary(c *gin.Context) {
   )
 
   if err != nil {
-    if err == sql.ErrNoRows {
-      c.JSON(http.StatusNotFound, gin.H{"error": "給与データが見つかりません"})
-    } else {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
-    }
+    handleDatabaseError(c, err, "給与データの取得に失敗しました")
     return
   }
 
@@ -660,7 +738,7 @@ func getSalaries(c *gin.Context) {
   `, id)
   
   if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
+    handleDatabaseError(c, err, "給与データの取得に失敗しました")
     return
   }
   defer rows.Close()
@@ -721,7 +799,7 @@ func getEvaluation(c *gin.Context) {
       eval.EmployeeID = id
       eval.Month = month
     } else {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
+      handleDatabaseError(c, err, "人事考課データの取得に失敗しました")
       return
     }
   } else {
@@ -803,7 +881,7 @@ func getEvaluations(c *gin.Context) {
   `, id)
   
   if err != nil {
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
+    handleDatabaseError(c, err, "人事考課データの取得に失敗しました")
     return
   }
   defer rows.Close()
@@ -870,112 +948,95 @@ func updateEvaluation(c *gin.Context) {
     return
   }
 
-  // 既存データの取得
-  var existingEval Evaluation
-  var skillScore, behaviorScore, attitudeScore sql.NullInt64
-  var managerComment sql.NullString
-  err := db.QueryRow(`
-    SELECT kokaid, kokamt, kokabk, kokazg, kokake, kokaty, kokajs
-    FROM TBL_KOUKA
-    WHERE kokaid = $1 AND kokamt = $2
-  `, eval.EmployeeID, eval.Month).Scan(
-    &existingEval.EmployeeID, &existingEval.Month, &existingEval.EmployeeComment,
-    &skillScore, &behaviorScore, &attitudeScore, &managerComment,
-  )
-
-  // 更新処理の準備
-  var employeeComment string
-  var skillScoreValue, behaviorScoreValue, attitudeScoreValue sql.NullInt64
-  var managerCommentValue sql.NullString
-
-  if err == nil {
-    // 既存データがある場合
-    if isAdmin {
-      // 上司は全項目を更新可能
-      employeeComment = eval.EmployeeComment
-      
-      if eval.SkillScore != nil {
-        skillScoreValue = sql.NullInt64{Int64: int64(*eval.SkillScore), Valid: true}
-      } else {
-        skillScoreValue = skillScore
-      }
-      
-      if eval.BehaviorScore != nil {
-        behaviorScoreValue = sql.NullInt64{Int64: int64(*eval.BehaviorScore), Valid: true}
-      } else {
-        behaviorScoreValue = behaviorScore
-      }
-      
-      if eval.AttitudeScore != nil {
-        attitudeScoreValue = sql.NullInt64{Int64: int64(*eval.AttitudeScore), Valid: true}
-      } else {
-        attitudeScoreValue = attitudeScore
-      }
-      
-      managerCommentValue = sql.NullString{String: eval.ManagerComment, Valid: eval.ManagerComment != ""}
-    } else {
-      // 一般社員は自分のコメントのみ更新可能
-      employeeComment = eval.EmployeeComment
-      skillScoreValue = skillScore
-      behaviorScoreValue = behaviorScore
-      attitudeScoreValue = attitudeScore
-      managerCommentValue = managerComment
-    }
+  // トランザクションによる処理実行
+  executeWithTransaction(c, func(tx *sql.Tx) error {
+    // 既存データの取得
+    var existingEval Evaluation
+    var skillScore, behaviorScore, attitudeScore sql.NullInt64
+    var employeeComment, managerComment sql.NullString
     
-    // 更新処理
-    _, err = db.Exec(`
-      UPDATE TBL_KOUKA
-      SET kokabk = $3, kokazg = $4, kokake = $5, kokaty = $6, kokajs = $7
+    err := tx.QueryRow(`
+      SELECT kokaid, kokamt, kokabk, kokazg, kokake, kokaty, kokajs
+      FROM TBL_KOUKA
       WHERE kokaid = $1 AND kokamt = $2
-    `, eval.EmployeeID, eval.Month, employeeComment,
-       skillScoreValue, behaviorScoreValue, attitudeScoreValue, managerCommentValue)
-    
-    if err != nil {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "更新エラー"})
-      return
+    `, eval.EmployeeID, eval.Month).Scan(
+      &existingEval.EmployeeID, &existingEval.Month, &employeeComment,
+      &skillScore, &behaviorScore, &attitudeScore, &managerComment,
+    )
+
+    // 更新処理の準備
+    var employeeCommentValue sql.NullString
+    var skillScoreValue, behaviorScoreValue, attitudeScoreValue sql.NullInt64
+    var managerCommentValue sql.NullString
+
+    // 新規評価のコメントをNullStringに変換
+    if eval.EmployeeComment != "" {
+      employeeCommentValue = sql.NullString{String: eval.EmployeeComment, Valid: true}
     }
-  } else if err == sql.ErrNoRows {
-    // 新規データ作成
+    
     if isAdmin {
-      // 上司は全項目を設定可能
-      employeeComment = eval.EmployeeComment
-      
+      // 上司の場合は評価スコアと上司コメントも設定
       if eval.SkillScore != nil {
         skillScoreValue = sql.NullInt64{Int64: int64(*eval.SkillScore), Valid: true}
       }
-      
       if eval.BehaviorScore != nil {
         behaviorScoreValue = sql.NullInt64{Int64: int64(*eval.BehaviorScore), Valid: true}
       }
-      
       if eval.AttitudeScore != nil {
         attitudeScoreValue = sql.NullInt64{Int64: int64(*eval.AttitudeScore), Valid: true}
       }
-      
-      managerCommentValue = sql.NullString{String: eval.ManagerComment, Valid: eval.ManagerComment != ""}
-    } else {
-      // 一般社員は自分のコメントのみ設定可能
-      employeeComment = eval.EmployeeComment
+      if eval.ManagerComment != "" {
+        managerCommentValue = sql.NullString{String: eval.ManagerComment, Valid: true}
+      }
     }
-    
-    // 挿入処理
-    _, err = db.Exec(`
-      INSERT INTO TBL_KOUKA (kokaid, kokamt, kokabk, kokazg, kokake, kokaty, kokajs)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-    `, eval.EmployeeID, eval.Month, employeeComment,
-       skillScoreValue, behaviorScoreValue, attitudeScoreValue, managerCommentValue)
-    
-    if err != nil {
-      c.JSON(http.StatusInternalServerError, gin.H{"error": "登録エラー"})
-      return
-    }
-  } else {
-    // その他のデータベースエラー
-    c.JSON(http.StatusInternalServerError, gin.H{"error": "データベースエラー"})
-    return
-  }
 
-  c.JSON(http.StatusOK, gin.H{"message": "人事考課情報を更新しました"})
+    if err == nil {
+      // 既存データがある場合は更新
+      // 一般社員の場合は自分のコメントのみ更新
+      if !isAdmin {
+        skillScoreValue = skillScore
+        behaviorScoreValue = behaviorScore
+        attitudeScoreValue = attitudeScore
+        managerCommentValue = managerComment
+      }
+      
+      _, err = tx.Exec(`
+        UPDATE TBL_KOUKA
+        SET kokabk = $3, kokazg = $4, kokake = $5, kokaty = $6, kokajs = $7
+        WHERE kokaid = $1 AND kokamt = $2
+      `, eval.EmployeeID, eval.Month, employeeCommentValue,
+         skillScoreValue, behaviorScoreValue, attitudeScoreValue, managerCommentValue)
+      
+      if err != nil {
+        return err
+      }
+    } else if err == sql.ErrNoRows {
+      // 新規データ作成
+      if !isAdmin {
+        // 一般社員は自分のコメントのみ設定可能
+        _, err = tx.Exec(`
+          INSERT INTO TBL_KOUKA (kokaid, kokamt, kokabk)
+          VALUES ($1, $2, $3)
+        `, eval.EmployeeID, eval.Month, employeeCommentValue)
+      } else {
+        // 上司は全項目を設定可能
+        _, err = tx.Exec(`
+          INSERT INTO TBL_KOUKA (kokaid, kokamt, kokabk, kokazg, kokake, kokaty, kokajs)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, eval.EmployeeID, eval.Month, employeeCommentValue,
+           skillScoreValue, behaviorScoreValue, attitudeScoreValue, managerCommentValue)
+      }
+      
+      if err != nil {
+        return err
+      }
+    } else {
+      // その他のデータベースエラー
+      return err
+    }
+    
+    return nil
+  }, "人事考課情報を更新しました")
 }
 
 // 給与計算関数（勤怠データから給与計算を行う）

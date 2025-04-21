@@ -33,10 +33,12 @@ body {
 .user-info {
   display: flex;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .user-info span {
-  margin-right: 20px;
+  margin-right: 10px;
 }
 
 /* カード（メイン画面のメニュー用） */
@@ -56,20 +58,70 @@ body {
   width: 300px;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
 }
 
 .card:hover {
-  transform: translateY(-5px) scale(1.03);
+  transform: translateY(-5px);
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.15);
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  background-color: #3498db;
+  transition: width 0.3s ease;
+}
+
+.card:hover::before {
+  width: 10px;
+}
+
+.card-icon {
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60px;
 }
 
 .card h2 {
   color: #2c3e50;
   margin-top: 0;
+  margin-bottom: 10px;
 }
 
 .card p {
   color: #666;
+  flex-grow: 1;
+  margin-bottom: 20px;
+}
+
+.card-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.card-footer button {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s ease;
+}
+
+.card-footer button:hover {
+  background-color: #2980b9;
 }
 
 /* フォーム要素 */
@@ -91,14 +143,29 @@ input[type="time"],
 select,
 textarea {
   width: 100%;
+  box-sizing: border-box;
   padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 16px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+input[type="time"]:focus,
+select:focus,
+textarea:focus {
+  border-color: #3498db;
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+  outline: none;
 }
 
 textarea {
   min-height: 100px;
+  resize: vertical;
 }
 
 button {
@@ -109,11 +176,27 @@ button {
   border-radius: 4px;
   cursor: pointer;
   font-size: 16px;
-  transition: background-color 0.3s ease;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 button:hover {
   background-color: #2980b9;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 button.secondary {
@@ -159,6 +242,18 @@ tr:hover {
   padding: 15px;
   margin-bottom: 20px;
   border-radius: 4px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .alert-success {
@@ -202,32 +297,72 @@ tr:hover {
   100% { transform: rotate(360deg); }
 }
 
+/* ローディングスピナー（インライン用） */
+.loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #fff;
+  animation: spin 1s ease-in-out infinite;
+}
+
 /* レスポンシブ対応 */
 @media (max-width: 768px) {
+  .container {
+    padding: 10px;
+  }
+  
   .card {
     width: 100%;
+    max-width: 400px;
+    margin-bottom: 20px;
   }
   
   .header {
     flex-direction: column;
     text-align: center;
+    padding: 15px 10px;
   }
   
   .user-info {
     margin-top: 10px;
+    justify-content: center;
+  }
+  
+  .form-group {
+    margin-bottom: 10px;
+  }
+  
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  select,
+  textarea {
+    font-size: 14px;
+    padding: 6px 10px;
   }
 }
 
 /* カレンダー */
 .calendar {
   margin-top: 20px;
+  background-color: white;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .calendar-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
 }
 
 .calendar-grid {
@@ -239,8 +374,9 @@ tr:hover {
 .calendar-day-header {
   text-align: center;
   font-weight: bold;
-  padding: 10px;
+  padding: 10px 5px;
   background-color: #f0f0f0;
+  border-radius: 4px;
 }
 
 .calendar-day {
@@ -248,11 +384,13 @@ tr:hover {
   padding: 5px;
   min-height: 80px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
+  border-radius: 4px;
 }
 
 .calendar-day:hover {
   background-color: #f5f5f5;
+  transform: scale(1.02);
 }
 
 .calendar-day.not-current-month {
@@ -263,6 +401,7 @@ tr:hover {
 .calendar-day.selected {
   background-color: #e1f5fe;
   border-color: #81d4fa;
+  box-shadow: 0 0 5px rgba(33, 150, 243, 0.3);
 }
 
 .calendar-day.today {
@@ -273,10 +412,14 @@ tr:hover {
 .calendar-day-number {
   font-size: 16px;
   margin-bottom: 5px;
+  text-align: right;
 }
 
 .calendar-day-content {
   font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* タブコンポーネント */
@@ -297,32 +440,105 @@ tr:hover {
   border-bottom: none;
   margin-right: 5px;
   border-radius: 4px 4px 0 0;
+  transition: background-color 0.2s;
+}
+
+.tab-item:hover {
+  background-color: #f5f5f5;
 }
 
 .tab-item.active {
   background-color: white;
   border-color: #ddd;
   margin-bottom: -1px;
+  font-weight: bold;
 }
 
 .tab-content {
   padding: 15px;
   background-color: white;
   border-radius: 0 0 4px 4px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
 /* 評価スコア用のラジオボタン */
 .score-radio-group {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .score-radio-label {
   display: flex;
   align-items: center;
   cursor: pointer;
+  padding: 5px 10px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.score-radio-label:hover {
+  background-color: #f5f5f5;
 }
 
 .score-radio-input {
   margin-right: 5px;
+}
+
+/* 共通コンテナスタイル */
+.content-card {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+/* 画面遷移効果（Appコンポーネントで使用） */
+.fade-enter {
+  opacity: 0;
+}
+
+.fade-enter-active {
+  opacity: 1;
+  transition: opacity 300ms;
+}
+
+.fade-exit {
+  opacity: 1;
+}
+
+.fade-exit-active {
+  opacity: 0;
+  transition: opacity 300ms;
+}
+
+/* メディアクエリ追加 - スマホ向け */
+@media (max-width: 576px) {
+  .calendar-day {
+    min-height: 60px;
+    padding: 3px;
+  }
+  
+  .calendar-day-number {
+    font-size: 14px;
+  }
+  
+  .calendar-day-content {
+    font-size: 9px;
+  }
+  
+  .header h1 {
+    font-size: 1.5rem;
+  }
+  
+  button {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  
+  .score-radio-group {
+    flex-direction: column;
+    gap: 5px;
+  }
 }

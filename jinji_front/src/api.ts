@@ -30,47 +30,68 @@ const getHeaders = (token: string | null) => {
   return headers;
 };
 
+// 再試行ロジック付きのfetch関数
+const fetchWithRetry = async <T>(
+  url: string, 
+  options: RequestInit, 
+  retries = 3, 
+  delay = 1000
+): Promise<ApiResponse<T>> => {
+  let lastError: any;
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, options);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        // DBエラーの場合は再試行
+        if (data.error && data.error.includes('データベース') && i < retries - 1) {
+          console.log(`リトライ ${i + 1}/${retries}...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        return { error: data.error || 'リクエストに失敗しました' };
+      }
+      
+      return { data };
+    } catch (error) {
+      console.error(`API通信エラー (試行 ${i + 1}/${retries}):`, error);
+      lastError = error;
+      
+      if (i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  return { error: lastError?.message || 'ネットワークエラーが発生しました' };
+};
+
 // ログイン処理
 export const login = async (employeeId: number, password: string): Promise<ApiResponse<{token: string, employee: Employee}>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/login`, {
+  return fetchWithRetry<{token: string, employee: Employee}>(
+    `${API_BASE_URL}/login`, 
+    {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ id: employeeId, password }),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || 'ログインに失敗しました' };
     }
-    
-    return { data: { token: data.token, employee: data.employee } };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 従業員情報取得
 export const getEmployee = async (id: number, token: string): Promise<ApiResponse<Employee>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/employee/${id}`, {
+  return fetchWithRetry<Employee>(
+    `${API_BASE_URL}/employee/${id}`, 
+    {
       method: 'GET',
       headers: getHeaders(token),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '従業員情報の取得に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 勤怠情報取得（月別）
@@ -79,22 +100,13 @@ export const getMonthlyAttendance = async (
   yearMonth: string, 
   token: string
 ): Promise<ApiResponse<AttendanceData>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/attendance/${employeeId}?month=${yearMonth}`, {
+  return fetchWithRetry<AttendanceData>(
+    `${API_BASE_URL}/attendance/${employeeId}?month=${yearMonth}`, 
+    {
       method: 'GET',
       headers: getHeaders(token),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '勤怠情報の取得に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 勤怠情報取得（日別）
@@ -103,22 +115,13 @@ export const getDailyAttendance = async (
   date: string, 
   token: string
 ): Promise<ApiResponse<AttendanceRecord>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/attendance/${employeeId}/${date}`, {
+  return fetchWithRetry<AttendanceRecord>(
+    `${API_BASE_URL}/attendance/${employeeId}/${date}`, 
+    {
       method: 'GET',
       headers: getHeaders(token),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '勤怠情報の取得に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 勤怠情報登録・更新
@@ -126,23 +129,14 @@ export const updateAttendance = async (
   attendance: AttendanceRecord, 
   token: string
 ): Promise<ApiResponse<{message: string}>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/attendance`, {
+  return fetchWithRetry<{message: string}>(
+    `${API_BASE_URL}/attendance`, 
+    {
       method: 'POST',
       headers: getHeaders(token),
       body: JSON.stringify(attendance),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '勤怠情報の更新に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 休暇情報登録
@@ -150,23 +144,14 @@ export const createLeave = async (
   leave: LeaveRecord, 
   token: string
 ): Promise<ApiResponse<{message: string}>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/leave`, {
+  return fetchWithRetry<{message: string}>(
+    `${API_BASE_URL}/leave`, 
+    {
       method: 'POST',
       headers: getHeaders(token),
       body: JSON.stringify(leave),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '休暇情報の登録に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 休暇情報削除
@@ -175,22 +160,13 @@ export const deleteLeave = async (
   date: string, 
   token: string
 ): Promise<ApiResponse<{message: string}>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/leave/${employeeId}/${date}`, {
+  return fetchWithRetry<{message: string}>(
+    `${API_BASE_URL}/leave/${employeeId}/${date}`, 
+    {
       method: 'DELETE',
       headers: getHeaders(token),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '休暇情報の削除に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 給与情報取得（月別）
@@ -199,22 +175,13 @@ export const getMonthlySalary = async (
   yearMonth: string, 
   token: string
 ): Promise<ApiResponse<SalaryData>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/salary/${employeeId}/${yearMonth}`, {
+  return fetchWithRetry<SalaryData>(
+    `${API_BASE_URL}/salary/${employeeId}/${yearMonth}`, 
+    {
       method: 'GET',
       headers: getHeaders(token),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '給与情報の取得に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 給与情報履歴取得
@@ -222,22 +189,13 @@ export const getSalaryHistory = async (
   employeeId: number, 
   token: string
 ): Promise<ApiResponse<SalaryData[]>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/salary/${employeeId}`, {
+  return fetchWithRetry<SalaryData[]>(
+    `${API_BASE_URL}/salary/${employeeId}`, 
+    {
       method: 'GET',
       headers: getHeaders(token),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '給与履歴の取得に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 人事考課情報取得（月別）
@@ -246,22 +204,13 @@ export const getMonthlyEvaluation = async (
   yearMonth: string, 
   token: string
 ): Promise<ApiResponse<{current: EvaluationData, previous: EvaluationData}>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/evaluation/${employeeId}/${yearMonth}`, {
+  return fetchWithRetry<{current: EvaluationData, previous: EvaluationData}>(
+    `${API_BASE_URL}/evaluation/${employeeId}/${yearMonth}`, 
+    {
       method: 'GET',
       headers: getHeaders(token),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '人事考課情報の取得に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 人事考課情報履歴取得
@@ -269,22 +218,13 @@ export const getEvaluationHistory = async (
   employeeId: number, 
   token: string
 ): Promise<ApiResponse<EvaluationData[]>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/evaluation/${employeeId}`, {
+  return fetchWithRetry<EvaluationData[]>(
+    `${API_BASE_URL}/evaluation/${employeeId}`, 
+    {
       method: 'GET',
       headers: getHeaders(token),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '人事考課履歴の取得に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };
 
 // 人事考課情報更新
@@ -292,21 +232,12 @@ export const updateEvaluation = async (
   evaluation: EvaluationData, 
   token: string
 ): Promise<ApiResponse<{message: string}>> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/evaluation`, {
+  return fetchWithRetry<{message: string}>(
+    `${API_BASE_URL}/evaluation`, 
+    {
       method: 'POST',
       headers: getHeaders(token),
       body: JSON.stringify(evaluation),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { error: data.error || '人事考課情報の更新に失敗しました' };
     }
-    
-    return { data };
-  } catch (error) {
-    return { error: 'ネットワークエラーが発生しました' };
-  }
+  );
 };

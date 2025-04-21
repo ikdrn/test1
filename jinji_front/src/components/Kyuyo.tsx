@@ -16,6 +16,7 @@ const Kyuyo: React.FC = () => {
   const [salaryHistory, setSalaryHistory] = useState<SalaryData[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [updateCount, setUpdateCount] = useState<number>(0); // 更新回数を追跡
   
   // 現在の年月を取得（YYYYMM形式）
   const getCurrentYearMonth = (): string => {
@@ -41,10 +42,21 @@ const Kyuyo: React.FC = () => {
       const result = await getMonthlySalary(employee.id, yearMonth, token);
       
       if (result.error) {
+        // DB接続エラーの場合、再試行
+        if (result.error.includes('データベース') && updateCount < 3) {
+          setUpdateCount(prev => prev + 1);
+          setTimeout(() => {
+            fetchSalaryData(yearMonth);
+          }, 1000); // 1秒後に再試行
+          return;
+        }
+        
         setError(result.error);
         setSalary(null);
         return;
       }
+      
+      setUpdateCount(0); // 成功したらカウンタリセット
       
       if (result.data) {
         setSalary(result.data);
@@ -55,7 +67,7 @@ const Kyuyo: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [employee, token]);
+  }, [employee, token, updateCount]);
   
   // 給与履歴取得
   const fetchSalaryHistory = useCallback(async () => {
@@ -67,9 +79,20 @@ const Kyuyo: React.FC = () => {
       const result = await getSalaryHistory(employee.id, token);
       
       if (result.error) {
+        // DB接続エラーの場合、再試行
+        if (result.error.includes('データベース') && updateCount < 3) {
+          setUpdateCount(prev => prev + 1);
+          setTimeout(() => {
+            fetchSalaryHistory();
+          }, 1000); // 1秒後に再試行
+          return;
+        }
+        
         setError(result.error);
         return;
       }
+      
+      setUpdateCount(0); // 成功したらカウンタリセット
       
       if (result.data) {
         setSalaryHistory(result.data);
@@ -77,6 +100,9 @@ const Kyuyo: React.FC = () => {
         // 初期表示月の設定（履歴の最新月か、なければ現在月）
         if (result.data.length > 0 && !currentMonth) {
           setCurrentMonth(result.data[0].month);
+        } else if (result.data.length === 0) {
+          // 履歴がない場合は現在の月を設定
+          setCurrentMonth(getCurrentYearMonth());
         }
       }
     } catch (err) {
@@ -85,7 +111,7 @@ const Kyuyo: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [employee, token, currentMonth]);
+  }, [employee, token, currentMonth, updateCount]);
   
   // 月変更ハンドラ
   const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -99,6 +125,16 @@ const Kyuyo: React.FC = () => {
     logout();
     navigate('/');
   };
+  
+  // エラーメッセージ表示の自動消去
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
   
   // 初期データ取得
   useEffect(() => {
@@ -135,28 +171,39 @@ const Kyuyo: React.FC = () => {
   );
   
   // 月選択部分
-  const renderMonthSelector = () => (
-    <div style={{ marginBottom: '20px' }}>
-      <label htmlFor="month-select" style={{ marginRight: '10px' }}>表示月:</label>
-      <select
-        id="month-select"
-        value={currentMonth}
-        onChange={handleMonthChange}
-        style={{ padding: '8px', borderRadius: '4px', minWidth: '150px' }}
-      >
-        {salaryHistory.map((item) => (
-          <option key={item.month} value={item.month}>
-            {formatYearMonth(item.month)}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
+  const renderMonthSelector = () => {
+    // 給与データが1つもない場合
+    if (salaryHistory.length === 0) {
+      return (
+        <div style={{ marginBottom: '20px' }}>
+          <div className="alert alert-info">給与データはまだ登録されていません</div>
+        </div>
+      );
+    }
+    
+    return (
+      <div style={{ marginBottom: '20px' }}>
+        <label htmlFor="month-select" style={{ marginRight: '10px' }}>表示月:</label>
+        <select
+          id="month-select"
+          value={currentMonth}
+          onChange={handleMonthChange}
+          style={{ padding: '8px', borderRadius: '4px', minWidth: '150px' }}
+        >
+          {salaryHistory.map((item) => (
+            <option key={item.month} value={item.month}>
+              {formatYearMonth(item.month)}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  };
   
   // 給与明細部分
   const renderSalaryDetail = () => {
     if (isLoading) {
-      return <div className="loading"></div>;
+      return <div className="loading" style={{ height: '200px' }}></div>;
     }
     
     if (error) {
@@ -172,7 +219,7 @@ const Kyuyo: React.FC = () => {
     }
     
     return (
-      <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px' }}>
+      <div className="content-card">
         <h2 style={{ textAlign: 'center', margin: '0 0 20px' }}>
           {formatYearMonth(salary.month)} 給与明細
         </h2>

@@ -19,6 +19,7 @@ const Kintai: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [updateCount, setUpdateCount] = useState<number>(0); // 更新回数を追跡
   
   // フォーム状態
   const [startTime, setStartTime] = useState<string>('');
@@ -62,10 +63,11 @@ const Kintai: React.FC = () => {
     
     // 当月のカレンダーを追加
     const currentMonthDays = [];
+    const today = new Date();
+    
     for (let i = 1; i <= lastDay.getDate(); i++) {
       const dayDate = new Date(year, month, i);
       const dateString = getDateString(dayDate);
-      const today = new Date();
       
       const day: CalendarDay = {
         date: dayDate,
@@ -124,9 +126,20 @@ const Kintai: React.FC = () => {
       const result = await getMonthlyAttendance(employee.id, yearMonth, token);
       
       if (result.error) {
+        // DB接続エラーの場合、再試行
+        if (result.error.includes('データベース') && updateCount < 3) {
+          setUpdateCount(prev => prev + 1);
+          setTimeout(() => {
+            fetchMonthlyAttendance();
+          }, 1000); // 1秒後に再試行
+          return;
+        }
+        
         setError(result.error);
         return;
       }
+      
+      setUpdateCount(0); // 成功したらカウンタリセット
       
       if (result.data) {
         setAttendanceData(result.data);
@@ -138,7 +151,7 @@ const Kintai: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [employee, token, currentDate, generateCalendar]);
+  }, [employee, token, currentDate, generateCalendar, updateCount]);
   
   // 日別の勤怠データを取得
   const fetchDailyAttendance = useCallback(async (date: Date) => {
@@ -152,9 +165,20 @@ const Kintai: React.FC = () => {
       const result = await getDailyAttendance(employee.id, dateStr, token);
       
       if (result.error) {
+        // DB接続エラーの場合、再試行
+        if (result.error.includes('データベース') && updateCount < 3) {
+          setUpdateCount(prev => prev + 1);
+          setTimeout(() => {
+            fetchDailyAttendance(date);
+          }, 1000); // 1秒後に再試行
+          return;
+        }
+        
         setError(result.error);
         return;
       }
+      
+      setUpdateCount(0); // 成功したらカウンタリセット
       
       if (result.data) {
         setSelectedDayData(result.data);
@@ -177,7 +201,7 @@ const Kintai: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [employee, token]);
+  }, [employee, token, updateCount]);
   
   // 日付選択ハンドラ
   const handleDayClick = (day: CalendarDay) => {
@@ -215,10 +239,20 @@ const Kintai: React.FC = () => {
       const result = await updateAttendance(attendanceRecord, token);
       
       if (result.error) {
+        // DB接続エラーの場合、再試行
+        if (result.error.includes('データベース') && updateCount < 3) {
+          setUpdateCount(prev => prev + 1);
+          setTimeout(async () => {
+            await handleSubmit(e);
+          }, 1000); // 1秒後に再試行
+          return;
+        }
+        
         setError(result.error);
         return;
       }
       
+      setUpdateCount(0); // 成功したらカウンタリセット
       setSuccess('勤怠情報を更新しました');
       
       // 勤怠データを再取得
@@ -268,6 +302,26 @@ const Kintai: React.FC = () => {
     }
   }, [currentDate, fetchMonthlyAttendance]);
   
+  // エラーメッセージ表示の自動消去
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
+  
+  // 成功メッセージ表示の自動消去
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        setSuccess(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [success]);
+  
   // ヘッダー部分
   const renderHeader = () => (
     <div className="header">
@@ -277,6 +331,42 @@ const Kintai: React.FC = () => {
         <button onClick={() => navigate('/main')}>メニューへ戻る</button>
         <button className="secondary" onClick={handleLogout}>ログアウト</button>
       </div>
+    </div>
+  );
+  
+  // カレンダー日付の内容をレンダリング
+  const renderCalendarDayContent = (day: CalendarDay) => (
+    <div className="calendar-day-content">
+      {day.attendance && (
+        <div style={{ 
+          fontSize: '10px', 
+          color: '#333',
+          backgroundColor: '#e6f7ff',
+          padding: '1px 3px',
+          borderRadius: '2px',
+          marginBottom: '2px',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}>
+          {day.attendance.startTime && day.attendance.startTime.substring(0, 5)}
+          {day.attendance.endTime && ` - ${day.attendance.endTime.substring(0, 5)}`}
+        </div>
+      )}
+      {day.leave && (
+        <div style={{ 
+          fontSize: '10px', 
+          color: 'white',
+          backgroundColor: '#ff9800',
+          padding: '1px 3px',
+          borderRadius: '2px',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis'
+        }}>
+          {LEAVE_TYPES[day.leave.leaveType as keyof typeof LEAVE_TYPES]}
+        </div>
+      )}
     </div>
   );
   
@@ -307,25 +397,7 @@ const Kintai: React.FC = () => {
             onClick={() => handleDayClick(day)}
           >
             <div className="calendar-day-number">{day.date.getDate()}</div>
-            <div className="calendar-day-content">
-              {day.attendance && (
-                <div style={{ fontSize: '10px' }}>
-                  {day.attendance.startTime && day.attendance.startTime.substring(0, 5)}
-                  {day.attendance.endTime && ` - ${day.attendance.endTime.substring(0, 5)}`}
-                </div>
-              )}
-              {day.leave && (
-                <div style={{ 
-                  fontSize: '10px', 
-                  color: 'white',
-                  backgroundColor: '#ff9800',
-                  padding: '2px 4px',
-                  borderRadius: '2px'
-                }}>
-                  {LEAVE_TYPES[day.leave.leaveType as keyof typeof LEAVE_TYPES]}
-                </div>
-              )}
-            </div>
+            {renderCalendarDayContent(day)}
           </div>
         ))}
       </div>
@@ -339,7 +411,7 @@ const Kintai: React.FC = () => {
     })`;
     
     return (
-      <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', marginTop: '20px' }}>
+      <div className="content-card">
         <h3>勤怠情報入力 - {formattedDate}</h3>
         
         {error && <div className="alert alert-error">{error}</div>}
@@ -411,7 +483,12 @@ const Kintai: React.FC = () => {
           
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
             <button type="submit" disabled={isLoading}>
-              {isLoading ? '処理中...' : '保存'}
+              {isLoading ? (
+                <>
+                  <span className="loading-spinner" style={{ marginRight: '8px' }}></span>
+                  処理中...
+                </>
+              ) : '保存'}
             </button>
           </div>
         </form>
@@ -423,7 +500,7 @@ const Kintai: React.FC = () => {
   const renderLeaveList = () => {
     if (!attendanceData || !attendanceData.leaves || attendanceData.leaves.length === 0) {
       return (
-        <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', marginTop: '20px' }}>
+        <div className="content-card">
           <h3>休暇一覧</h3>
           <p>当月の休暇はありません。</p>
         </div>
@@ -431,7 +508,7 @@ const Kintai: React.FC = () => {
     }
     
     return (
-      <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', marginTop: '20px' }}>
+      <div className="content-card">
         <h3>休暇一覧</h3>
         <table>
           <thead>
