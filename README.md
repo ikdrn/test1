@@ -13,34 +13,35 @@
 ##データベース
 -- 社員データベース
 CREATE TABLE TBL_EMPLO (
-  emplid NUMERIC(5) PRIMARY KEY,
-  emplps VARCHAR(60) NOT NULL, -- bcryptハッシュ化
-  emplnm VARCHAR(50) NOT NULL
+  emplid NUMERIC(5) PRIMARY KEY,  --社員ID
+  emplps VARCHAR(60) NOT NULL,    --パスワド 
+  emplnm VARCHAR(50) NOT NULL,    --名前
+  emplrl NUMERIC(1)  NOT NULL     --社員のロール（1一般,2上司,3人事）
 );
 
 -- 勤怠データベース
 CREATE TABLE TBL_ATTEN (
-  atteid NUMERIC(5) NOT NULL,
-  attedt DATE NOT NULL,
-  attest TIME,
-  atteet TIME,
-  PRIMARY KEY (atteid, attedt), -- 社員番号と日付でユニークにする
+  atteid NUMERIC(5) NOT NULL,     --社員ID
+  attedt DATE NOT NULL,           --日付
+  attest TIME,                    --就業開始時刻
+  atteet TIME,                    --就業終了時刻
+  PRIMARY KEY (atteid, attedt),   -- 社員番号と日付でユニークにする
   FOREIGN KEY (atteid) REFERENCES TBL_EMPLO(emplid)
 );
 
 -- 休暇データベース
 CREATE TABLE TBL_LEAVE (
-  lereid NUMERIC(5) NOT NULL,
-  leredt DATE NOT NULL,
-  leretp NUMERIC(1) NOT NULL, -- 1:年次有給, 2:産前, 3:産後, 4:育児, 5:介護, 6:子の看護, 7:生理, 8:母性健康管理
+  lereid NUMERIC(5) NOT NULL,   -- 社員番号
+  leredt DATE NOT NULL,         -- 休暇日付
+  leretp NUMERIC(1) NOT NULL,   -- 休暇種別（1:年次有給, 2:産前, 3:産後, 4:育児, 5:介護, 6:子の看護, 7:生理, 8:母性健康管理）
   PRIMARY KEY (lereid, leredt), -- 社員番号と日付でユニークにする
   FOREIGN KEY (lereid) REFERENCES TBL_EMPLO(emplid)
 );
 
 -- 給与データベース
 CREATE TABLE TBL_SALRY (
-  srlyid NUMERIC(5) NOT NULL,
-  srlymt VARCHAR(6) NOT NULL, -- YYYYMM
+  srlyid NUMERIC(5) NOT NULL, -- 社員ID
+  srlymt VARCHAR(6) NOT NULL, -- 給与支払日付YYYYMM
   srlykh INTEGER NOT NULL, -- 基本給
   srlyzg INTEGER NOT NULL, -- 残業手当
   srlyke INTEGER NOT NULL, -- 健康保険料
@@ -56,8 +57,9 @@ CREATE TABLE TBL_SALRY (
 -- 人事考課データベース
 
 CREATE TABLE TBL_KOUKA (
-  kokaid NUMERIC(5) NOT NULL,
-  kokamt VARCHAR(6) NOT NULL, -- YYYYMM
+  kokaid NUMERIC(5) NOT NULL, -- 社員ID
+  kokaji NUMERIC(5) NOT NULL, -- 上司社員ID
+  kokamt VARCHAR(6) NOT NULL, -- 人事考課日付YYYYMM
   kokabk VARCHAR(256),        -- 部下入力項目
   kokazg NUMERIC(1),          -- 能力評価 (1〜5)
   kokake NUMERIC(1),          -- 行動評価 (1〜5)
@@ -72,51 +74,56 @@ CREATE TABLE TBL_KOUKA (
 
 ##インサート文
 
-INSERT INTO TBL_EMPLO (emplid, emplps, emplnm) VALUES
-(10001, 'abc1234', '一般 太郎'),
-(10002, 'def1234', '一般 花子'),
-(20001, 'ghi1234', '上司 次郎');
+INSERT INTO TBL_EMPLO (emplid, emplps, emplnm,emplrl) VALUES
+(10001, 'abc1234', '佐藤 太郎',1),
+(20002, 'def1234', '山田 花子',1),
+(30003, 'ghi1234', '斎藤 次郎',1);
 
 INSERT INTO TBL_ATTEN (atteid, attedt, attest, atteet) VALUES
 (10001, '2025-04-01', '09:00:00', '18:05:30'),
 (10001, '2025-04-02', '09:10:15', '19:00:00'),
-(10001, '2025-04-03', '08:55:00', NULL),
-(10002, '2025-04-01', '09:30:00', '17:45:10');
+(20002, '2025-04-03', '08:55:00', NULL),
+(30003, '2025-04-01', '09:30:00', '17:45:10');
 
 INSERT INTO TBL_LEAVE (lereid, leredt, leretp) VALUES
 (10001, '2025-04-10', 1),
-(10001, '2025-04-11', 1),
-(10002, '2025-04-15', 8);
+(20002, '2025-04-11', 1),
+(30003, '2025-04-15', 8);
 
 INSERT INTO TBL_SALRY (srlyid, srlymt, srlykh, srlyzg, srlyke, srlyka, srlyko, srlyky, srlysy, srlysz) VALUES
 (10001, '202504', 250000, 15000, 12500, 4500, 22875, 1250, 8500, 25000);
 
 INSERT INTO TBL_SALRY (srlyid, srlymt, srlykh, srlyzg, srlyke, srlyka, srlyko, srlyky, srlysy, srlysz) VALUES
-(10002, '202504', 230000, 5000, 11500, 4140, 21038, 1150, 6800, 23000);
+(20002, '202504', 230000, 5000, 11500, 4140, 21038, 1150, 6800, 23000);
 
-INSERT INTO TBL_KOUKA (kokaid, kokamt, kokabk, kokazg, kokake, kokaty, kokajs) VALUES
-(10001, '202504', '今月は〇〇プロジェクトの設計を担当し、期限内に完了できました。特に△△の部分で新しい技術を導入し効率化を図りました。来月は□□の改善に注力したいです。', NULL, NULL, NULL, NULL);
+INSERT INTO TBL_KOUKA (kokaid, kokaji, kokamt, kokabk, kokazg, kokake, kokaty, kokajs) VALUES
+(10001, 20001, '202504', '今月は〇〇プロジェクトの設計を担当し、期限内に完了できました。特に△△の部分で新しい技術を導入し効率化を図りました。来月は□□の改善に注力したいです。', NULL, NULL, NULL, NULL);
 
-INSERT INTO TBL_KOUKA (kokaid, kokamt, kokabk, kokazg, kokake, kokaty, kokajs) VALUES
-(10002, '202504', '顧客からの問い合わせ対応を迅速に行い、解決率も向上しました。マニュアルの整備にも貢献しました。', 4, 5, 4, '顧客対応が非常に丁寧で評価が高い。チームへの貢献も素晴らしい。来期はリーダーシップを発揮することも期待。');
+INSERT INTO TBL_KOUKA (kokaid, kokaji, kokamt, kokabk, kokazg, kokake, kokaty, kokajs) VALUES
+(20002, 20001,'202504', '顧客からの問い合わせ対応を迅速に行い、解決率も向上しました。マニュアルの整備にも貢献しました。', 4, 5, 4, '顧客対応が非常に丁寧で評価が高い。チームへの貢献も素晴らしい。来期はリーダーシップを発揮することも期待。');
 
 ##画面詳細
 1、ログイン画面(login)
 employeesテーブルの社員番号EMPLID とパスワードEMPLPS が一致したらメイン画面に遷移する。
-1~~~~だと部下、2~~~~だと上司としてログインする。
+
 2、メイン画面(main)
 以下三画面に遷移する用のメイン画面。四角で四角の中に画面名とちょっとした詳細が出るようにしたい。
 カーソルを合わせたらちょっと大きくなるようにしたい。
+
 3、勤怠画面(kintai)
-左側にカレンダー（ライブラリは使わない）。右側には出退勤時間を入力できるようにする。あと休暇。
+左側にカレンダー（ライブラリは使わない）。右側には出退勤時間と休暇を入力できるようにする。
 左側のカレンダーの日付をクリックすると右側も変わるようにしたい。
 左側のカレンダーには時刻があれば日付よりも小さく表示する。
 どこかそれっぽい場所に休暇の一覧を表示する。
-毎月最終日締めで、翌月の第一金曜日まで入力を許可して、それを過ぎると自動で勤怠が締められる。整合性が取れるかのチェックを裏でしておきたい。
-締めたら給与テーブルにインサートする。健康保険料: 5%、厚生年金保険料: 9.15%、介護保険料: 約1.8%、雇用保険料: 0.5%
+毎月最終日締めで、翌月の第一金曜日まで入力を許可して、それを過ぎると自動で勤怠が締められる。
+整合性が取れるかのチェックをする。勤怠を締めたら給与テーブルにインサートする。
+
+4、給与画面(kyuyo)
+表示のみ。月を変更することも可能。控除額の合計や手取額の合計はテーブルにないので、ロジック内で計算してください。
+健康保険料: 5%、厚生年金保険料: 9.15%、介護保険料: 約1.8%、雇用保険料: 0.5%
 所得税（単純に前年の基本給かける12で考えてほしい。）
 累進課税制度により、収入に応じて税率が変動
-195万円以下: 5%
+195万円以下: 5%　
 195万円超330万円以下: 10%
 330万円超695万円以下: 20%
 695万円超900万円以下: 23%
@@ -124,8 +131,7 @@ employeesテーブルの社員番号EMPLID とパスワードEMPLPS が一致し
 1,800万円超4,000万円以下: 40%
 4,000万円超: 45%
 住民税10%
-4、給与画面(kyuyo)
-表示のみ。月を変更することも可能。控除額の合計や手取額の合計はテーブルにないので、ロジック内で計算してください。
+
 5、人事考課画面(kouka)
 部下は目標項目のみ入力可能。
 上司は3項目（能力、行動、態度）ラジオで5段階評価
