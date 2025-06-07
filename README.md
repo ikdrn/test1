@@ -137,7 +137,11 @@ jinji/
 │   ├── Dockerfile
 │   ├── go.mod
 │   ├── go.sum          # go mod tidy で自動生成される予定
-│   ├── main.go         # main関数、ルーティング設定、DB接続関連、全てのHTTPリクエストハンドラ、給与計算などのビジネスロジック、データ構造定義、共通ユーティリティ関数
+│   ├── kintai.go     
+│   ├── kouka.go        
+│   ├── kyuyo.go         
+│   ├── login.go        
+│   ├── main.go         
 ├── jinji_front/
 │   ├── node_modules/     # npx create-react-app jinji_front --template typescript で自動生成される予定
 │   ├── public/
